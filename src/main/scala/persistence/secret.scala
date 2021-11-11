@@ -166,7 +166,7 @@ object SlickSecretsRepository {
                 secretOpt <- secrets.filter(_.secretId === updated.secretId.id).result.headOption
                 id <- secretOpt.fold[DBIOAction[UUID, NoStream, Effect.Write]](
                   (secrets returning secrets.map(_.secretId)) += updated
-                )(secret => secrets.update(updated).map(_ => secret.secretId.id))
+                )(secret => secrets.map(_.value).update(updated.value).map(_ => secret.secretId.id))
               } yield id).transactionally
             }
               .map(SecretId(_))

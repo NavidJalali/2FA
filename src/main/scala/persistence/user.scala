@@ -142,7 +142,12 @@ object SlickUserRepository {
                 userOpt <- users.filter(_.userId === updated.userId.id).result.headOption
                 id <- userOpt.fold[DBIOAction[UUID, NoStream, Effect.Write]](
                   (users returning users.map(_.userId)) += updated
-                )(user => users.update(updated).map(_ => user.userId.id))
+                )(user =>
+                  users
+                    .map(u => (u.mateId, u.passwordHash, u.privateKey))
+                    .update((updated.mateId.id, updated.passwordHash, updated.passwordHash))
+                    .map(_ => user.userId.id)
+                )
               } yield id).transactionally
             }
               .map(UserId(_))

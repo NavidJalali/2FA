@@ -2,7 +2,7 @@ package logic.permissions
 
 import configuration.Configuration
 import cryptography.Crypto
-import logic.permissions.Permissions.Error.{DatabaseError, InvalidPrivateKey, NoSuchPermission, NoSuchUser, Unauthorized}
+import logic.permissions.Permissions.Error.{DatabaseError, Forbidden, InvalidPrivateKey, NoSuchPermission, NoSuchUser, Unauthorized}
 import model.{HexString, PermissionId, ServiceError, UserId}
 import persistence.{Permission, PermissionRepository, UserDatabaseModel, UserRepository}
 import syntax.UUIDSyntax.UUIDOps
@@ -12,6 +12,7 @@ import syntax.ByteArraySyntax._
 
 import java.sql.Timestamp
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 object Permissions {
@@ -33,6 +34,18 @@ object Permissions {
     ZLayer.fromServices[Configuration.FinalConfig, Crypto.Service, UserRepository, PermissionRepository, Service] {
       (configuration, crypto, users, permissions) =>
         new Service {
+          private def isGrantable(permission: Permission): Boolean =
+            !permission.granted &&
+              permission.createdAt.after(Timestamp.from(Instant.now.minus(1, ChronoUnit.HOURS)))
+
+          private def userById(userId: UserId) =
+            users.getById(userId)
+              .mapError(DatabaseError)
+              .flatMap({
+                case Some(dbModel) => IO.succeed(dbModel)
+                case None => IO.fail(NoSuchUser(userId))
+              })
+
           private def generateToken(initiatorKey: String, grantorKey: String, permissionId: PermissionId): IO[Error, String] =
             for {
               payload <-
@@ -54,12 +67,7 @@ object Permissions {
           override def add(requester: UserId): IO[Error, PermissionId] = {
             val permissionId = PermissionId(UUID.randomUUID())
             for {
-              requesterDbRes <- users.getById(requester)
-                .mapError(DatabaseError)
-                .flatMap({
-                  case Some(dbModel) => IO.succeed(dbModel)
-                  case None => IO.fail(NoSuchUser(requester))
-                })
+              requesterDbRes <- userById(requester)
 
               (requesterUser, requesterDbModel) = requesterDbRes
 
@@ -91,12 +99,7 @@ object Permissions {
           override def add(requester: UserDatabaseModel): IO[Error, PermissionId] = {
             val permissionId = PermissionId(UUID.randomUUID())
             for {
-              mateDbRes <- users.getById(requester.mateId)
-                .mapError(DatabaseError)
-                .flatMap({
-                  case Some(dbModel) => IO.succeed(dbModel)
-                  case None => IO.fail(NoSuchUser(requester.mateId))
-                })
+              mateDbRes <- userById(requester.mateId)
 
               (mateUser, mateDbModel) = mateDbRes
 
@@ -118,7 +121,7 @@ object Permissions {
 
           override def getAllPending(userId: UserId): IO[Error, Seq[Permission]] =
             permissions
-              .getByGrantor(userId).mapBoth(DatabaseError, _.filterNot(_.granted))
+              .getByGrantor(userId).mapBoth(DatabaseError, _.filter(isGrantable))
 
           override def edit(permission: Permission): IO[Error, PermissionId] =
             permissions.upsert(permission).mapError(DatabaseError)
@@ -129,6 +132,9 @@ object Permissions {
 
               _ <- IO.fail(NoSuchPermission(permissionId))
                 .unless(permission.permissionId == permissionId)
+
+              _ <- IO.fail(Forbidden)
+                .unless(isGrantable(permission))
 
               initiatorKey <- users
                 .getById(permission.requester)
@@ -175,6 +181,10 @@ object Permissions {
 
     case object Unauthorized extends Error {
       override val status: Status = Status.UNAUTHORIZED
+    }
+
+    case object Forbidden extends Error {
+      override val status: Status = Status.FORBIDDEN
     }
 
     case object InvalidPrivateKey extends Error {

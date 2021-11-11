@@ -8,7 +8,10 @@ trait ServiceError {
   val headers: List[Header] = List.empty
   val status: Status
 
-  def toResponse: Response[Any, Nothing] = Response.HttpResponse(
-    status, headers, message.fold(HttpData.empty)(msg => HttpData.CompleteData(Chunk.fromArray(msg.getBytes())))
-  )
+  def toResponse: Response[Any, Nothing] = {
+    println(toString)
+    Response.HttpResponse(
+      status, headers, message.fold(HttpData.empty)(msg => HttpData.CompleteData(Chunk.fromArray(msg.getBytes())))
+    )
+  }
 }

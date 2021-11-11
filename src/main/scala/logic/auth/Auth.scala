@@ -14,7 +14,7 @@ object Auth {
   trait Service {
     def login(username: String, password: String): IO[Error, (User, UserDatabaseModel)]
 
-    def authorized(userId: UserId): IO[Error, (User, UserDatabaseModel)]
+    def byId(userId: UserId): IO[Error, (User, UserDatabaseModel)]
 
     def create(username: String, password: String, mateId: UserId): IO[Error, (User, UserDatabaseModel)]
 
@@ -43,7 +43,7 @@ object Auth {
                 )
             } yield result
 
-          override def authorized(userId: UserId): IO[Error, (User, UserDatabaseModel)] =
+          override def byId(userId: UserId): IO[Error, (User, UserDatabaseModel)] =
             users.getById(userId)
               .mapError(DatabaseError)
               .flatMap({

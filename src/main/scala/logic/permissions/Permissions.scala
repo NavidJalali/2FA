@@ -10,6 +10,8 @@ import zhttp.http.Status
 import zio.{Has, IO, ZLayer}
 import syntax.ByteArraySyntax._
 
+import java.sql.Timestamp
+import java.time.Instant
 import java.util.UUID
 
 object Permissions {
@@ -17,6 +19,8 @@ object Permissions {
     def add(requester: UserId): IO[Error, PermissionId]
 
     def add(requester: UserDatabaseModel): IO[Error, PermissionId]
+
+    def getById(permissionId: PermissionId): IO[Error, Permission]
 
     def getAllPending(userId: UserId): IO[Error, Seq[Permission]]
 
@@ -72,7 +76,13 @@ object Permissions {
 
               result <- permissions.add(
                 Permission(
-                  permissionId = permissionId, requester = requester, grantor = mateUser.userId, token = hmac, granted = false
+                  permissionId = permissionId,
+                  requester = requester,
+                  grantor = mateUser.userId,
+                  token = hmac,
+                  granted = false,
+                  createdAt = Timestamp.from(Instant.now),
+                  grantedAt = None
                 )
               ).mapError(DatabaseError)
             } yield result
@@ -94,27 +104,28 @@ object Permissions {
 
               result <- permissions.add(
                 Permission(
-                  permissionId = permissionId, requester = requester.userId, grantor = mateUser.userId, token = hmac, granted = false
+                  permissionId = permissionId,
+                  requester = requester.userId,
+                  grantor = mateUser.userId,
+                  token = hmac,
+                  granted = false,
+                  createdAt = Timestamp.from(Instant.now),
+                  grantedAt = None
                 )
               ).mapError(DatabaseError)
             } yield result
           }
 
           override def getAllPending(userId: UserId): IO[Error, Seq[Permission]] =
-            permissions.getByGrantor(userId).mapError(DatabaseError)
+            permissions
+              .getByGrantor(userId).mapBoth(DatabaseError, _.filterNot(_.granted))
 
           override def edit(permission: Permission): IO[Error, PermissionId] =
             permissions.upsert(permission).mapError(DatabaseError)
 
           override def grant(grantorKey: String, permissionId: PermissionId): IO[Error, PermissionId] =
             for {
-              permission <- permissions
-                .getById(permissionId)
-                .mapError(DatabaseError)
-                .flatMap {
-                  case Some(permission) => IO.succeed(permission)
-                  case None => IO.fail(NoSuchPermission(permissionId))
-                }
+              permission <- getById(permissionId)
 
               _ <- IO.fail(NoSuchPermission(permissionId))
                 .unless(permission.permissionId == permissionId)
@@ -131,10 +142,19 @@ object Permissions {
 
               result <-
                 if (token == permission.token)
-                  edit(permission.copy(granted = true))
+                  edit(permission.copy(granted = true, grantedAt = Some(Timestamp.from(Instant.now))))
                 else IO.fail(Unauthorized)
 
             } yield result
+
+          override def getById(permissionId: PermissionId): IO[Error, Permission] =
+            permissions
+              .getById(permissionId)
+              .mapError(DatabaseError)
+              .flatMap {
+                case Some(permission) => IO.succeed(permission)
+                case None => IO.fail(NoSuchPermission(permissionId))
+              }
         }
     }
 

@@ -7,17 +7,24 @@ import slick.interop.zio.syntax._
 import slick.jdbc.H2Profile.api._
 import zio.{Has, IO, ZIO, ZLayer}
 
+import java.sql.Timestamp
 import java.util.UUID
 
-case class Permission(permissionId: PermissionId, requester: UserId, grantor: UserId, token: String, granted: Boolean)
+case class Permission(permissionId: PermissionId,
+                      requester: UserId,
+                      grantor: UserId,
+                      token: String,
+                      granted: Boolean,
+                      createdAt: Timestamp,
+                      grantedAt: Option[Timestamp])
 
 object Permission {
-  type PermissionTuple = (UUID, UUID, UUID, String, Boolean)
+  type PermissionTuple = (UUID, UUID, UUID, String, Boolean, Timestamp, Option[Timestamp])
 
   def fromTuple(t: PermissionTuple): Permission =
     t match {
-      case (permissionId, requester, grantor, token, granted) =>
-        Permission(PermissionId(permissionId), UserId(requester), UserId(grantor), token, granted)
+      case (permissionId, requester, grantor, token, granted, createdAt, grantedAt) =>
+        Permission(PermissionId(permissionId), UserId(requester), UserId(grantor), token, granted, createdAt, grantedAt)
     }
 
   def toTuple(m: Permission): Option[PermissionTuple] =
@@ -26,7 +33,9 @@ object Permission {
       m.requester.id,
       m.grantor.id,
       m.token,
-      m.granted
+      m.granted,
+      m.createdAt,
+      m.grantedAt
     ))
 }
 
@@ -55,6 +64,10 @@ object PermissionsTable {
 
     def granted: Rep[Boolean] = column[Boolean]("granted")
 
+    def createdAt: Rep[Timestamp] = column[Timestamp]("created_at")
+
+    def grantedAt: Rep[Option[Timestamp]] = column[Option[Timestamp]]("granted_at")
+
     def requesterFK: ForeignKeyQuery[UsersTable.Users, UserDatabaseModel] =
       foreignKey("fk_requester_id", requester, UsersTable.table)(
         _.userId, onUpdate = ForeignKeyAction.Cascade, onDelete = ForeignKeyAction.Cascade
@@ -67,7 +80,7 @@ object PermissionsTable {
 
     def idxGrantor: Index = index("idx_grantor", grantor, unique = false)
 
-    def * : ProvenShape[Permission] = (permissionId, requester, grantor, token, granted) <>
+    def * : ProvenShape[Permission] = (permissionId, requester, grantor, token, granted, createdAt, grantedAt) <>
       (Permission.fromTuple, Permission.toTuple)
   }
 
@@ -108,9 +121,15 @@ object SlickPermissionRepository {
               implicit ec =>
                 (for {
                   permissionOpt <- permissions.filter(_.permissionId === updated.permissionId.id).result.headOption
-                  id <- permissionOpt.fold[DBIOAction[UUID, NoStream, Effect.Write]](
+                  _ = println(permissionOpt)
+                  id <- permissionOpt.fold[DBIOAction[UUID, NoStream, Effect.Write]] {
+                    println(s"adding $updated")
                     (permissions returning permissions.map(_.permissionId)) += updated
-                  )(permission => permissions.update(updated).map(_ => permission.permissionId.id))
+                  } {
+                    permission => permissions
+                      .map(p => (p.granted, p.grantedAt))
+                      .update((updated.granted, updated.grantedAt)).map(_ => permission.permissionId.id)
+                  }
                 } yield id).transactionally
             }
               .map(PermissionId(_))

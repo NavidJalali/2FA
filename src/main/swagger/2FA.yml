@@ -1,0 +1,346 @@
+openapi: 3.0.1
+info:
+  title: 2FA
+  version: 1.0.0
+servers:
+  - url: /
+paths:
+  /users:
+    get:
+      summary: Get user information
+      description: Get user information
+      operationId: addUser
+      parameters:
+        - name: userId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        400:
+          description: Bad Request
+          content: {}
+        404:
+          description: Not Found
+          content: {}
+        500:
+          description: Internal Server Error
+          content: {}
+      security:
+        - bearerAuth: []
+    post:
+      summary: Create new user
+      description: Create new user
+      operationId: createUser
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewUser'
+        required: true
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        400:
+          description: Bad Request
+          content: {}
+        500:
+          description: Internal Server Error
+          content: {}
+      x-codegen-request-body-name: body
+  /secret:
+    post:
+      summary: Create new secret
+      description: Create new secret
+      operationId: createSecret
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValueType'
+        required: true
+      responses:
+        200:
+          description: SecretId
+          content:
+            application/json:
+              schema:
+                type: string
+                format: uuid
+        400:
+          description: Bad Request
+          content: {}
+        500:
+          description: Internal Server Error
+          content: {}
+      x-codegen-request-body-name: body
+      security:
+        - bearerAuth: []
+  /secret/share:
+    post:
+      summary: Share a secret
+      description: Share a secret
+      operationId: shareSecret
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SharedSecret'
+        required: true
+      responses:
+        200:
+          description: SharedId
+          content:
+            application/json:
+              schema:
+                type: integer
+                format: int64
+        400:
+          description: Bad Request
+          content: {}
+        404:
+          description: Not Found
+          content: {}
+        500:
+          description: Internal Server Error
+          content: {}
+      x-codegen-request-body-name: body
+      security:
+        - bearerAuth: []
+  /auth:
+    post:
+      summary: Login user
+      description: Login user
+      operationId: login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+        required: true
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+        400:
+          description: Bad Request
+          content: {}
+        404:
+          description: Not Found
+          content: {}
+        500:
+          description: Internal Server Error
+          content: {}
+      x-codegen-request-body-name: body
+  /permission:
+    get:
+      summary: Get all pending permissions
+      description: Get all pending permissions
+      operationId: getAllPendingPermissions
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PermissionResponse'
+        400:
+          description: Bad Request
+          content: {}
+        404:
+          description: Not Found
+          content: {}
+        500:
+          description: Internal Server Error
+          content: {}
+      security:
+        - bearerAuth: []
+  /permission/poll/{permissionId}:
+    get:
+      summary: Poll permission for auth header
+      description: Poll permission for auth header
+      operationId: pollPermission
+      parameters:
+        - name: permissionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuthResponse'
+        400:
+          description: Bad Request
+          content: {}
+        404:
+          description: Not Found
+          content: {}
+        500:
+          description: Internal Server Error
+          content: {}
+  /permission/grant/{permissionId}:
+    get:
+      summary: Grant permission
+      description: Grant permission
+      operationId: grantPermission
+      parameters:
+        - name: permissionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        200:
+          description: OK
+          content: {}
+        400:
+          description: Bad Request
+          content: {}
+        404:
+          description: Not Found
+          content: {}
+        500:
+          description: Internal Server Error
+          content: {}
+      security:
+        - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    NewUser:
+      required:
+        - mateId
+        - password
+        - username
+      type: object
+      properties:
+        mateId:
+          type: string
+          format: uuid
+        username:
+          type: string
+        password:
+          type: string
+    User:
+      required:
+        - mateId
+        - secrets
+        - userId
+        - username
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        mateId:
+          type: string
+          format: uuid
+        username:
+          type: string
+        secrets:
+          type: array
+          items:
+            $ref: '#/components/schemas/Secret'
+    Secret:
+      required:
+        - ownerId
+        - secretId
+        - value
+      type: object
+      properties:
+        secretId:
+          type: string
+          format: uuid
+        ownerId:
+          type: string
+          format: uuid
+        value:
+          type: string
+    Credentials:
+      required:
+        - password
+        - username
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+    Accepted:
+      required:
+        - permissionId
+        - pollUrl
+      type: object
+      properties:
+        permissionId:
+          type: string
+          format: uuid
+        pollUrl:
+          type: string
+          format: uri
+    AuthResponse:
+      type: object
+      properties:
+        authHeader:
+          type: string
+    SharedSecret:
+      required:
+        - secretId
+        - value
+      type: object
+      properties:
+        secretId:
+          type: string
+          format: uuid
+        value:
+          type: string
+    PermissionResponse:
+      required:
+        - createdAt
+        - permissionId
+        - requester
+      type: object
+      properties:
+        permissionId:
+          type: string
+          format: uuid
+        requester:
+          type: string
+          format: uuid
+        createdAt:
+          type: integer
+          format: int64
+    ValueType:
+      required:
+        - value
+      type: object
+      properties:
+        value:
+          type: string

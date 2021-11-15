@@ -16,6 +16,7 @@ import zio.{Chunk, IO, UIO, ZIO, ZLayer}
 import java.time.{Clock, Instant}
 import java.time.temporal.ChronoUnit
 import java.util.UUID
+import scala.collection.immutable.HashSet
 import scala.util.Try
 
 object API {
@@ -90,9 +91,19 @@ object API {
                             queryParam.headOption.flatMap(str => Try(UUID.fromString(str)).toOption).map(UserId(_))
                               .fold[IO[Auth.Error, Response[Any, Nothing]]](ZIO.succeed(badRequest)) {
                                 userId =>
-                                  auth
-                                    .byId(userId)
-                                    .map { case (user, _) => respondWith(user) }
+                                  auth.byId(userId)
+                                    .zip(auth.byId(authHeader.userId))
+                                    .map { case ((user, _), (caller, _)) =>
+                                      val accessible = HashSet.from(caller.secrets.map(_.secretId))
+                                      respondWith(
+                                        user.copy(
+                                          secrets =
+                                            user
+                                              .secrets
+                                              .filter(secret => accessible.contains(secret.secretId))
+                                        )
+                                      )
+                                    }
                               }
                           case None => ZIO.succeed(respondWith(user))
                         }

@@ -81,34 +81,22 @@ object API {
                 ZIO.succeed(Response.text("OK"))
 
               case Request((Method.GET, URL(Root / "users", _, queryParams)), headers, _) =>
-                authRequired(headers) {
-                  authHeader =>
-                    auth.byId(authHeader.userId)
-                      .flatMap { case (user, _) =>
-                        queryParams
-                          .get("userId") match {
-                          case Some(queryParam) =>
-                            queryParam.headOption.flatMap(str => Try(UUID.fromString(str)).toOption).map(UserId(_))
-                              .fold[IO[Auth.Error, Response[Any, Nothing]]](ZIO.succeed(badRequest)) {
-                                userId =>
-                                  auth.byId(userId)
-                                    .zip(auth.byId(authHeader.userId))
-                                    .map { case ((user, _), (caller, _)) =>
-                                      val accessible = HashSet.from(caller.secrets.map(_.secretId))
-                                      respondWith(
-                                        user.copy(
-                                          secrets =
-                                            user
-                                              .secrets
-                                              .filter(secret => accessible.contains(secret.secretId))
-                                        )
-                                      )
-                                    }
+                authRequired(headers) { authHeader =>
+                  auth.byId(authHeader.userId).flatMap { case (user, _) =>
+                    queryParams.get("userId") match {
+                      case Some(queryParam) =>
+                        queryParam.headOption.flatMap(str => Try(UUID.fromString(str)).toOption).map(UserId(_))
+                          .fold[IO[Auth.Error, Response[Any, Nothing]]](ZIO.succeed(badRequest)) { userId =>
+                            auth.byId(userId)
+                              .zip(auth.byId(authHeader.userId))
+                              .map { case ((user, _), (caller, _)) =>
+                                val accessible = HashSet.from(caller.secrets.map(_.secretId))
+                                respondWith(user.copy(secrets = user.secrets.filter(secret => accessible.contains(secret.secretId))))
                               }
-                          case None => ZIO.succeed(respondWith(user))
-                        }
-                      }
-                      .catchAll(error => ZIO.succeed(error.toResponse))
+                          }
+                      case None => ZIO.succeed(respondWith(user))
+                    }
+                  }.catchAll(error => ZIO.succeed(error.toResponse))
                 }
 
               case request@Request((Method.POST, URL(Root / "users", _, _)), _, _) =>
